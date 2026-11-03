@@ -1,0 +1,420 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mastery 500 Calculator</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: #111318;
+    color: #e8eaf0;
+    font-family: Arial, sans-serif;
+  }
+  .container {
+    max-width: 650px;
+    margin: auto;
+  }
+  h1 { font-size: 25px; margin-bottom: 6px; }
+  .subtitle { color: #9299a8; margin-bottom: 24px; }
+  .panel {
+    background: #1b1f28;
+    border: 1px solid #303644;
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  label {
+    display: block;
+    font-size: 13px;
+    color: #aeb5c4;
+    margin-bottom: 7px;
+  }
+  input {
+    width: 100%;
+    padding: 12px;
+    background: #11151c;
+    color: white;
+    border: 1px solid #394252;
+    border-radius: 7px;
+    font-size: 16px;
+    margin-bottom: 16px;
+  }
+  input:focus { outline: 1px solid #8b7cff; }
+  .results {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .result {
+    background: #252b37;
+    border-radius: 9px;
+    padding: 14px;
+  }
+  .result small { color: #aeb5c4; }
+  .result strong {
+    display: block;
+    font-size: 21px;
+    margin-top: 7px;
+    color: #a99aff;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th, td {
+    padding: 12px 8px;
+    text-align: right;
+    border-bottom: 1px solid #303644;
+  }
+  th { color: #aeb5c4; font-weight: 600; }
+  th:first-child, td:first-child { text-align: left; }
+  tr:last-child td { border-bottom: none; }
+  .active { color: #9e91ff; font-weight: bold; }
+  .note {
+    font-size: 12px;
+    color: #9299a8;
+    line-height: 1.6;
+    margin-top: 14px;
+  }
+  @media(max-width: 450px) {
+    body { padding: 14px; }
+    .result strong { font-size: 17px; }
+    table { font-size: 12px; }
+    th, td { padding: 10px 5px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🎯 Mastery 500 Calculator</h1>
+<div class="subtitle">Calculate XP, cycles and time required to reach Mastery 500.</div>
+
+<div class="panel">
+  <label for="currentLevel">Current Mastery Level</label>
+  <input id="currentLevel" type="number"
+         min="1" max="500" step="1" value="1">
+
+  <label for="xp">Mastery XP per cycle</label>
+  <input id="xp" type="number" min="0.0001"
+         step="any" value="1200">
+
+  <label for="duration">Cycle duration (seconds)</label>
+  <input id="duration" type="number" min="0.0001"
+         step="any" value="1">
+</div>
+
+<div class="panel">
+  <div class="results">
+    <div class="result">
+      <small>Total XP required</small>
+      <strong>1.3B</strong>
+    </div>
+    <div class="result">
+      <small>Total cycles</small>
+      <strong id="cycles">-</strong>
+    </div>
+    <div class="result">
+      <small>Estimated time</small>
+      <strong id="time">-</strong>
+    </div>
+    <div class="result">
+      <small>Average XP / cycle</small>
+      <strong id="average">-</strong>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>XP Milestones</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Mastery Level</th>
+        <th>XP Bonus</th>
+        <th>XP Required</th>
+      </tr>
+    </thead>
+    <tbody id="xpTable"></tbody>
+  </table>
+  <div class="note">
+    XP requirements are cumulative. Known game observations
+    are preserved exactly. Intermediate thresholds are estimated
+    using monotonic PCHIP cubic interpolation.
+    Level 500 is anchored at exactly 1.3 billion XP.
+  </div>
+</div>
+
+</div>
+
+<script>
+// ==========================================
+// CONFIGURATION
+// ==========================================
+
+const TARGET_XP = 1_300_000_000;
+
+const MILESTONES = [
+  { level: 50, bonus: 5 },
+  { level: 100, bonus: 10 },
+  { level: 150, bonus: 15 },
+  { level: 200, bonus: 20 },
+  { level: 250, bonus: 25 },
+  { level: 300, bonus: 30 },
+  { level: 350, bonus: 35 },
+  { level: 400, bonus: 40 },
+  { level: 450, bonus: 45 },
+  { level: 500, bonus: 50 }
+];
+
+// Verified cumulative XP observations.
+// [Mastery level, cumulative XP]
+
+const XP_ANCHORS = [
+  [1, 0],
+  [50, 1379662],
+  [100, 10714990],
+  [150, 35803973],
+  [200, 84449239],
+  [250, 164448778],
+  [300, 283607536],
+  [350, 449723502],
+  [400, 670585392],
+  [450, 954053802],
+  [500, 1300000000]
+];
+
+// ==========================================
+// PCHIP INTERPOLATION
+// ==========================================
+
+// Calculate interval widths and secant slopes.
+const X = XP_ANCHORS.map(p => p[0]);
+const Y = XP_ANCHORS.map(p => p[1]);
+
+const N = X.length;
+const H = [];
+const DELTA = [];
+
+for (let i = 0; i < N - 1; i++) {
+  H[i] = X[i + 1] - X[i];
+  DELTA[i] = (Y[i + 1] - Y[i]) / H[i];
+}
+
+// PCHIP endpoint derivative.
+function endpointSlope(h1, h2, d1, d2) {
+  let slope =
+    ((2 * h1 + h2) * d1 - h1 * d2) /
+    (h1 + h2);
+
+  if (Math.sign(slope) !== Math.sign(d1)) {
+    slope = 0;
+  } else if (
+    Math.sign(d1) !== Math.sign(d2) &&
+    Math.abs(slope) > Math.abs(3 * d1)
+  ) {
+    slope = 3 * d1;
+  }
+
+  return slope;
+}
+
+// Calculate shape-preserving derivatives.
+const DERIVATIVES = new Array(N);
+
+DERIVATIVES[0] = endpointSlope(
+  H[0], H[1], DELTA[0], DELTA[1]
+);
+
+DERIVATIVES[N - 1] = endpointSlope(
+  H[N - 2],
+  H[N - 3],
+  DELTA[N - 2],
+  DELTA[N - 3]
+);
+
+// Interior derivatives use weighted harmonic means.
+for (let i = 1; i < N - 1; i++) {
+  const dPrevious = DELTA[i - 1];
+  const dNext = DELTA[i];
+
+  if (
+    dPrevious === 0 ||
+    dNext === 0 ||
+    Math.sign(dPrevious) !== Math.sign(dNext)
+  ) {
+    DERIVATIVES[i] = 0;
+  } else {
+    const w1 = 2 * H[i] + H[i - 1];
+    const w2 = H[i] + 2 * H[i - 1];
+
+    DERIVATIVES[i] =
+      (w1 + w2) /
+      (w1 / dPrevious + w2 / dNext);
+  }
+}
+
+// ==========================================
+// XP PROGRESSION ESTIMATION
+// ==========================================
+
+function getXPRequired(level) {
+  if (level <= 1) return 0;
+  if (level >= 500) return TARGET_XP;
+
+  // Find the interval containing this level.
+  let i = 0;
+
+  while (i < N - 2 && level > X[i + 1]) {
+    i++;
+  }
+
+  const h = H[i];
+  const t = (level - X[i]) / h;
+
+  // Cubic Hermite basis functions.
+  const h00 = 2 * t ** 3 - 3 * t ** 2 + 1;
+  const h10 = t ** 3 - 2 * t ** 2 + t;
+  const h01 = -2 * t ** 3 + 3 * t ** 2;
+  const h11 = t ** 3 - t ** 2;
+
+  const xp =
+    h00 * Y[i] +
+    h10 * h * DERIVATIVES[i] +
+    h01 * Y[i + 1] +
+    h11 * h * DERIVATIVES[i + 1];
+
+  return Math.round(xp);
+}
+
+// ==========================================
+// FORMATTING
+// ==========================================
+
+const numberFormat = new Intl.NumberFormat("en-US");
+
+function formatTime(seconds) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  if (days > 0)
+    return `${days}d ${hours}h ${minutes}m`;
+
+  if (hours > 0)
+    return `${hours}h ${minutes}m`;
+
+  if (minutes > 0)
+    return `${minutes}m ${secs}s`;
+
+  return `${secs}s`;
+}
+
+// ==========================================
+// CALCULATOR
+// ==========================================
+
+function calculate() {
+  const baseXP = Number(document.getElementById("xp").value);
+  const duration = Number(document.getElementById("duration").value);
+  const currentLevel = Number(
+    document.getElementById("currentLevel").value
+  );
+
+  if (!Number.isFinite(baseXP) || baseXP <= 0 ||
+      !Number.isFinite(duration) || duration <= 0 ||
+      !Number.isInteger(currentLevel) ||
+      currentLevel < 1 || currentLevel > 500) {
+
+    document.getElementById("cycles").textContent = "-";
+    document.getElementById("time").textContent = "-";
+    document.getElementById("average").textContent = "-";
+    document.getElementById("xpTable").innerHTML = "";
+    return;
+  }
+
+  let totalCycles = 0;
+  let totalTime = 0;
+  let totalEarned = 0;
+
+  // Start with cumulative XP for the selected level.
+  let currentXP = getXPRequired(currentLevel);
+
+  // Existing unlocked milestone bonus.
+  let previousBonus = Math.floor(currentLevel / 50) * 5;
+
+  const table = document.getElementById("xpTable");
+  table.innerHTML = "";
+
+  MILESTONES.forEach(milestone => {
+
+    const requiredXP = getXPRequired(milestone.level);
+
+    // Skip milestones already reached.
+    if (milestone.level <= currentLevel) {
+      return;
+    }
+
+    const xpPerCycle =
+      baseXP * (1 + previousBonus / 100);
+
+    const remainingXP = Math.max(
+      0,
+      requiredXP - currentXP
+    );
+
+    const cyclesNeeded = Math.ceil(
+      remainingXP / xpPerCycle
+    );
+
+    const gainedXP = cyclesNeeded * xpPerCycle;
+
+    totalCycles += cyclesNeeded;
+    totalTime += cyclesNeeded * duration;
+    totalEarned += gainedXP;
+
+    currentXP += gainedXP;
+
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+      <td>${milestone.level}</td>
+      <td class="active">+${milestone.bonus}%</td>
+      <td>${numberFormat.format(requiredXP)}</td>
+    `;
+
+    table.appendChild(row);
+
+    previousBonus = milestone.bonus;
+  });
+
+  document.getElementById("cycles").textContent =
+    numberFormat.format(totalCycles);
+
+  document.getElementById("time").textContent =
+    formatTime(totalTime);
+
+  document.getElementById("average").textContent =
+    totalCycles > 0
+      ? numberFormat.format(Math.round(totalEarned / totalCycles))
+      : "-";
+}
+
+// ==========================================
+// LIVE INPUT
+// ==========================================
+
+document.getElementById("xp").addEventListener("input", calculate);
+document.getElementById("duration").addEventListener("input", calculate);
+document.getElementById("currentLevel").addEventListener("input", calculate);
+
+calculate();
+</script>
+</body>
+</html>
