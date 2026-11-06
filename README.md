@@ -4,21 +4,23 @@ Calculate the XP, cycles, and time required to reach Mastery 500.
 
 ## XP Milestones
 
-XP requirements are cumulative. Known game observations are preserved exactly.
-Intermediate thresholds are estimated using monotonic PCHIP cubic interpolation.
-Level 500 is anchored at exactly 1.3 billion XP.
+XP requirements are cumulative and follow cubic scaling:
+
+    XP(LV) = round(10.4 * LV^3)
+
+The result is rounded to an integer. Level 500 requires exactly 1.3 billion XP.
 
 | Mastery | XP Bonus | Cumulative XP Required |
 |---------|----------|------------------------|
-| 50 | +5% | 1,379,662 |
-| 100 | +10% | 10,714,990 |
-| 150 | +15% | 35,803,973 |
-| 200 | +20% | 84,449,239 |
-| 250 | +25% | 164,448,778 |
-| 300 | +30% | 283,607,536 |
-| 350 | +35% | 449,723,502 |
-| 400 | +40% | 670,585,392 |
-| 450 | +45% | 954,053,802 |
+| 50 | +5% | 1,300,000 |
+| 100 | +10% | 10,400,000 |
+| 150 | +15% | 35,100,000 |
+| 200 | +20% | 83,200,000 |
+| 250 | +25% | 162,500,000 |
+| 300 | +30% | 280,800,000 |
+| 350 | +35% | 445,900,000 |
+| 400 | +40% | 665,600,000 |
+| 450 | +45% | 947,700,000 |
 | 500 | +50% | 1,300,000,000 |
 
 ## Usage
@@ -35,9 +37,9 @@ Level 500 is anchored at exactly 1.3 billion XP.
 ## Config
 
 The calculator's defaults are:
-- Mastery XP per cycle: `3796.2`
-- Cycle duration: `3.48s`
+- Current Mastery Level: `1`
+- Mastery XP per cycle: `1200`
+- Cycle duration: `1s`
 
 Open `mastery-calculator.html` in a browser and adjust the inputs to recompute
-totals. Intermediate values use PCHIP interpolation between the verified
-observations above.
+totals. XP thresholds are computed with the cubic formula above.
